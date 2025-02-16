@@ -1,0 +1,140 @@
+table {
+  margin: 0 auto;
+}
+
+/* Default Table Style */
+table {
+  color: #333;
+  background: white;
+  border: 1px solid grey;
+  font-size: 12pt;
+  border-collapse: collapse;
+  width: 100%
+}
+table thead th,
+table tfoot th {
+  color: #777;
+  background: rgba(0,0,0,.1);
+}
+table caption {
+  padding:.5em;
+}
+table th,
+table td {
+  padding: .5em;
+  border: 1px solid lightgrey;
+}
+/* Zebra Table Style */
+[data-table-theme*=zebra] tbody tr:nth-of-type(odd) {
+  background: rgba(0,0,0,.05);
+}
+[data-table-theme*=zebra][data-table-theme*=dark] tbody tr:nth-of-type(odd) {
+  background: rgba(255,255,255,.05);
+}
+/* Dark Style */
+[data-table-theme*=dark] {
+  color: #ddd;
+  background: #333;
+  font-size: 12pt;
+  border-collapse: collapse;
+}
+[data-table-theme*=dark] thead th,
+[data-table-theme*=dark] tfoot th {
+  color: #aaa;
+  background: rgba(0255,255,255,.15);
+}
+[data-table-theme*=dark] caption {
+  padding:.5em;
+}
+[data-table-theme*=dark] th,
+[data-table-theme*=dark] td {
+  padding: .5em;
+  border: 1px solid grey;
+}
+
+td {
+  text-align: center;
+  cursor: pointer;
+}
+
+th {
+  text-align: center;
+}
+
+.exchanges-container {
+  display: flex;
+  justify-content: center;
+  width: 68%;
+}
+
+.exchanges {
+  position: relative;
+  width: 100%;
+}
+
+.exchanges-title {
+  margin-left: 1rem;
+  margin-bottom: 1rem;
+}
+
+.exchanges-title::after {
+  position: absolute;
+  left: 265px;
+  top: 28px;
+  content: "";
+  width: calc(100% - 265px);
+  height: 2px;
+  background-color: black;
+}
+
+.exchanges-title::before{
+  position: absolute;
+  left: 0;
+  top: 28px;
+  content: "";
+  width: calc(1rem - 7px);
+  height: 2px;
+  background-color: black;
+}
+
+.exchanges-body {
+  display: flex;
+  flex-direction: column;
+  padding-block: 2rem;
+  padding-inline: 2rem;
+  height: calc(100vh - 160.8px);
+  background-color: #f3f3f3;
+  border-radius: 5px;
+  overflow: auto;
+}
+
+.exchange-info {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+
+.exchange-info::after {
+  position: absolute;
+  left: 0;
+  bottom: -0.5rem;
+  content: "";
+  width: 100%;
+  height: 2px;
+  background-color: black;
+}
+
+.img {
+  margin-right: 1rem;
+  width: 165px;
+  height: 165px;
+}
+
+.img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 5px;
+}

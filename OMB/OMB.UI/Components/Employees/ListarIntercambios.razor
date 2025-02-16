@@ -1,0 +1,256 @@
+@page "/listarintercambios/{filtroParam:nonfile?}"
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+@inject NavigationManager navegador
+@inject userListUseCase userListUseCase
+@inject listTransportUseCase listTransportUseCase
+@inject unresolvedExchangeListUseCase unresolvedExchangeListUseCase
+@inject listPostUseCase listPostUseCase
+@inject shipListUseCase shipListUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+@inject listShipImagesUseCase listShipImagesUseCase
+@inject listSedesUseCase listSedesUseCase
+@inject IJSRuntime JS
+@using System.Globalization
+
+<div class="container-de-containers">
+	<div class="exchanges-container">
+	<div class="exchanges">
+		<h1 class="exchanges-title">Intercambios</h1>
+		<div class="exchanges-body">
+		@if (exchanges.Any()) {
+			int i = 0;
+			<table width="10%" class="table table-striped table-bordered">
+				<thead>
+					<tr>
+						<th>Publicado</th>
+						<th colspan="2">Estado del intercambio</th>
+						<th>Ofertado</th>
+					</tr>
+				</thead>
+				<tbody>
+				@foreach (var exchange in exchanges){
+					<tr @onclick="()=>browseToExchange(exchange)">
+					<td rowspan="2" class="img">
+						<img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(images[i]))"/>
+					</td>
+					<td>
+						<p><strong>Publicación: @getPostedTransport(exchange)</strong></p>
+						<p>Dueño de la publicación: @getPostTarget(exchange)</p>
+					</td>
+					<td>
+						<p><strong>Ofertado: @getOfferedTransport(exchange)</strong></p>
+						<p>Ofertante: @getOfferTarget(exchange)</p>
+					</td>
+					<td rowspan="2" class="img">
+						<img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(imgOffer[i]))"/>
+					</td>
+					</tr>
+					<tr @onclick="()=>browseToExchange(exchange)">
+					<td colspan="2">@($"Intercambio programado para el {exchange.fechaYHora.ToString("dd/MM/yyyy")} en la sede {@nombreSede(exchange)}")</td>
+					</tr>
+					i++;
+				}
+			</tbody>
+			</table>
+		} else {
+			<h3 class="text-center">Aún no hay intercambios</h3>
+		}
+		</div>
+	</div>
+	</div>
+	<div class="filtros">
+        <div>
+            <p>@exchanges.Count resultados</p>
+        </div>
+        @if (filtrosAplicados.Count != 0) {
+            <div class="filtro-aplicados">
+                @foreach (string filtro in filtrosAplicados) {
+                    <div @onclick="()=>eliminarFiltro(filtro)" class="filtro-aplicado">
+                        @filtro
+                        <div class="eliminar-filtro"></div>
+                    </div>
+                }
+            </div>
+        }
+        <div class="filtro">
+            <h4 class="titulo-filtro">Sedes</h4>
+            @foreach (string sede in sedes.Select(sede => sede.name).ToList()) {
+                @if (!esFiltro(sede)) {
+                    <p @onclick="()=>filtrar(sede)">@sede<span class="cantidad-tipo">(@cantidadTipo(sede))</span></p>
+                }
+            }
+        </div>
+        <div class="form-group mt-4">
+            <input type="date" name="begin" placeholder="dd-mm-yyyy" min="@((DateTime.Today.Year - 40).ToString())-01-01" @bind="fechaFiltro" class="form-control">
+        </div>
+    </div>
+</div>
+
+
+@code {
+    List<UnresolvedExchange> exchanges = new List<UnresolvedExchange>();
+    List<Transport> transports = new List<Transport>();
+    List<Post> posts = new List<Post>();
+    List<User> users = new List<User>();
+    List<byte[]> imgOffer = new List<byte[]>();
+
+    List<VehicleImage> vehicleImages = new List<VehicleImage>();
+    List<ShipImage> shipImages = new List<ShipImage>();
+    List<byte[]> images = new List<byte[]>();
+
+    [Parameter]
+    public string? filtroParam { get; set; }
+    List<Sede> sedes = new List<Sede>();
+    List<string> filtrosAplicados = new List<string>();
+
+    private DateTime? _fechaFiltro;
+    public DateTime? fechaFiltro {
+        get => _fechaFiltro;
+        set {
+            _fechaFiltro = value;
+            obtenerIntercambios();
+        }
+    }
+
+    protected override void OnInitialized() {
+        //Trayendo los filtros aplicados
+        filtrosAplicados = new List<string>();
+        if (!string.IsNullOrEmpty(filtroParam)) {
+            foreach (string filtro in filtroParam.Split("&")) {
+                filtrosAplicados.Add(filtro);
+            }
+        }
+
+        // Inicializo listas para usarlas después
+        users = userListUseCase.Execute();
+        transports = listTransportUseCase.Execute();
+        sedes = listSedesUseCase.Execute();
+
+        posts = listPostUseCase.Execute();
+        vehicleImages = listVehicleImagesUseCase.Execute();
+        shipImages = listShipImagesUseCase.Execute();
+
+        obtenerIntercambios();
+        
+    }
+
+    private void obtenerIntercambios() {
+        exchanges = unresolvedExchangeListUseCase.Execute().Where(E => E.state == "Accepted").ToList();
+        //Dejo solo las que pasen el filtro
+        List<UnresolvedExchange> intercambiosAMostrar = new List<UnresolvedExchange>();
+        foreach (UnresolvedExchange exchange in exchanges) {
+            Sede sede = sedes.Find(sede => sede.Id == exchange.sedeId) ?? throw new Exception("sede not found");
+            if (!string.IsNullOrEmpty(filtroParam) && !esFiltro(sede.name))
+                continue;
+            if (!aplicarFiltroFecha(exchange.fechaYHora))
+                continue;
+            intercambiosAMostrar.Add(exchange);
+        }
+
+        exchanges = intercambiosAMostrar;
+        exchanges.Reverse();
+        getImages();
+    }
+
+    private bool esFiltro(string sede) {
+        if (string.IsNullOrEmpty(filtroParam))
+            return false;
+        return filtroParam.Contains(sede, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool aplicarFiltroFecha(DateTime fecha) {
+        if (fechaFiltro == null) return true;
+        return fechaFiltro == fecha;
+    }
+
+    public void getImages() {
+        imgOffer = new List<byte[]>();
+        images = new List<byte[]>();
+        foreach (var exchange in exchanges) {
+            int transportId = exchange.transportePosteadoId;
+            int offTrans = exchange.transporteOfertadoId;
+
+            if(isVehicle(offTrans)){
+                imgOffer.Add(vehicleImages.Where(img => img.VehicleId == offTrans).FirstOrDefault(new VehicleImage(1, new byte[1])).Image);
+            }
+            else{
+                imgOffer.Add(shipImages.Where(img => img.ShipId == offTrans).FirstOrDefault(new ShipImage(1, new byte[1])).Image);
+            }
+
+            if (isVehicle(transportId)) {
+                var vehicleImage = vehicleImages.FirstOrDefault(img => img.VehicleId == transportId);
+                images.Add(vehicleImage != null ? vehicleImage.Image : new byte[1]);
+            } 
+            else {
+                var shipImage = shipImages.FirstOrDefault(img => img.ShipId == transportId);
+                images.Add(shipImage != null ? shipImage.Image : new byte[1]);
+            }
+        }
+    }
+
+    public bool isVehicle (int transportId) {
+        return !shipListUseCase.Execute().Any(ship => ship.Id == transportId);
+    }
+
+    // Obtiene el userName del dueño del post involucrado
+    public string getPostTarget(UnresolvedExchange exchange) {
+        Transport postedTransport = transports.Find(transport => transport.Id == exchange.transportePosteadoId) ?? throw new Exception("transport not found");
+        User postedTransportOwner = users.Find(user => user.Id == postedTransport.UserId) ?? throw new Exception("sede not found");
+        return postedTransportOwner.userName;
+    }
+
+    // Obtiene el userName del dueño del transporte ofertado involucrado
+    public string getOfferTarget(UnresolvedExchange exchange) {
+        Transport offeredTransport = transports.Find(transport => transport.Id == exchange.transporteOfertadoId) ?? throw new Exception("transport not found");
+        User postedTransportOwner = users.Find(user => user.Id == offeredTransport.UserId) ?? throw new Exception("sede not found");
+        return postedTransportOwner.userName;
+    }
+
+    // Obtiene la patente del transporte ofrecido
+    public string getOfferedTransport(UnresolvedExchange exchange) {
+        Transport offeredTransport = transports.Find(transport => transport.Id == exchange.transporteOfertadoId) ?? throw new Exception("transport not found");
+        return $"{offeredTransport.type} {offeredTransport.model} {offeredTransport.plate}";
+    }
+
+    // Obtiene la patente del transporte publicado
+    public string getPostedTransport(UnresolvedExchange exchange) {
+        Transport postedTransport = transports.Find(transport => transport.Id == exchange.transportePosteadoId) ?? throw new Exception("transport not found");
+        return $"{postedTransport.type} {postedTransport.model} {postedTransport.plate}";
+    }
+
+    public void browseToExchange(UnresolvedExchange exchange) {
+        navegador.NavigateTo($"visualizarintercambio/{exchange.Id}", true);
+    }
+
+    private int cantidadTipo(string tipo) {
+        Sede sede = sedes.Where(S => S.name == tipo).SingleOrDefault() ?? throw new Exception("sede not found");
+        return unresolvedExchangeListUseCase.Execute().Where(E => E.sedeId == sede.Id && E.state == "Accepted").Count();
+    }
+
+    private void filtrar(string filtro) {
+        if (string.IsNullOrEmpty(filtroParam)) {
+            navegador.NavigateTo($"/listarintercambios/{filtro}", true);
+        }
+        else {
+            navegador.NavigateTo($"/listarintercambios/{filtroParam}&{filtro}", true);
+        }
+    }
+
+    private void eliminarFiltro(string filtro) {
+        if (string.IsNullOrEmpty(filtroParam)) {
+            navegador.NavigateTo("/listarintercambios", true);
+            return;
+        }
+        List<string> filtros = filtroParam.Split("&").ToList();
+        filtros.Remove(filtro);
+
+        navegador.NavigateTo($"/listarintercambios/{String.Join("&", filtros)}", true);
+    }
+
+    private string nombreSede(UnresolvedExchange exchange) {
+        var sede = sedes.FirstOrDefault(s => s.Id == exchange.sedeId);
+        return sede != null ? sede.name : "Sede no encontrada";
+    }
+
+}

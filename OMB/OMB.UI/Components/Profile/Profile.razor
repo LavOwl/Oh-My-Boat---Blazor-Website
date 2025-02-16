@@ -1,0 +1,158 @@
+@page "/profile/{userUsername?}"
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@rendermode InteractiveServer
+@inject modifyUserUseCase modifyUserUseCase
+@inject ProtectedSessionStorage sessionStorage
+@inject userListUseCase userListUseCase
+@inject NavigationManager Navegador
+@inject unresolvedExchangeListUseCase unresolvedExchangeListUseCase
+@inject resolvedExchangeListUseCase resolvedExchangeListUseCase
+@inject listTransportUseCase listTransportUseCase
+@inject deleteUnresolvedExchangeUseCase deleteUnresolvedExchangeUseCase
+@inject listPostUseCase listPostUseCase
+@inject modifyPostUseCase modifyPostUseCase
+
+<DialogoConfirmacion @ref="dialogo" OnConfirmado="Banear"/>
+
+@if (shouldDisplay) {
+
+    <div class="container">
+        <div class="profile_card">
+            <div class="profile_details">
+                <div class="intro">
+                    <div class="profile_image">
+                        <img src="../default_profile_image.jpg" alt="Foto de perfil">
+                    </div>
+                    <h2 class="mb-2">@user?.name @user?.surname</h2>
+                    @if (user != null && user.banned) {
+                        <div class="texto_ban">
+                            <i class='bx bxs-error'></i>
+                            <p>Usuario baneado</p>
+                        </div>
+                    }
+                </div>
+                <div class="contact_info">
+                    <div class="row">
+                        <i class='bx bxs-phone icon'></i>
+                        <div class="content">
+                            <p>Teléfono</p>
+                            <h5>@user?.number</h5>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <i class='bx bx-envelope icon'></i>
+                        <div class="content">
+                            <p>Email</p>
+                            <h5>@user?.mail</h5>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <i class="bx bx-user icon"></i>
+                        <div class="content">
+                            <p>Nombre de usuario</p>
+                            <h5>@user?.userName</h5>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @if (userId != 0) {
+            <h4 class="sub_title">Operaciones</h4>
+            <div>
+                @if (isEmployee && userId == 1) {
+                    @if (user != null && user.banned) {
+                        <button class="btn btn-danger btn-lg" style="margin-right: 0.3rem;" data-bs-toggle="modal" @onclick="ConfirmarBaneo">Desbanear</button>
+                    }
+                    else {
+                        <button class="btn btn-danger btn-lg" style="margin-right: 0.3rem;" data-bs-toggle="modal" @onclick="ConfirmarBaneo">Banear</button>
+                    }
+                }
+                else if (user?.Id == userId) {
+                    <button class="btn blue_btn btn-lg" @onclick="AbrirListarVehiculos" data-bs-toggle="modal" data-bs-target="#listarVehiculosModal">Listar vehiculos</button>
+                    <button class="btn blue_btn btn-lg" style="margin-right: 0.3rem;" @onclick="AbrirListarBarcos" data-bs-toggle="modal" data-bs-target="#listarBarcosModal">Listar barcos</button>
+                }
+                <button class="btn blue_btn btn-lg" @onclick="AbrirListarPublicaciones" data-bs-toggle="modal" data-bs-target="#listarPublicacionesModal">Listar Publicaciones</button>
+            </div>
+        }
+    </div>
+
+}
+
+<ListarVehiculos @ref="listarVehiculos" />
+<ListarBarcos @ref="listarBarcos" />
+<ListarPublicaciones @ref="listarPublicaciones" />
+
+@code {
+    private bool shouldDisplay = false;
+
+    User user = new User();
+    [Parameter] public string? userUsername { get; set; }
+    bool isEmployee;
+    int userId;
+    DialogoConfirmacion dialogo = null!;
+
+    ListarVehiculos listarVehiculos = null!;
+    ListarBarcos listarBarcos = null!;
+    ListarPublicaciones listarPublicaciones = null!;
+
+    protected override async Task OnInitializedAsync() {
+        //Busca la información del user a mostrar a travez de su userName
+        var foundUser = userListUseCase.Execute().Find(user => user.userName == userUsername);
+        user = foundUser ?? new User();
+
+        //Extrae la información del user loggeado, para mostrarle el boton ban si es daniel
+        var result  = await sessionStorage.GetAsync<bool>("isEmployee");
+        isEmployee = result .Success ? result.Value : false;
+        var result2 = await sessionStorage.GetAsync<int>("userId");
+        userId = result2.Success ? result2.Value : 0;
+
+        shouldDisplay = true;
+    }
+
+    private void ConfirmarBaneo() {
+        string aux = (user.banned) ? $"¿Seguro que desea desbanear al usuario {user.userName}?" : $"¿Seguro que desea banear al usuario {user.userName}?";
+        dialogo.Mostrar(aux);
+    }
+
+    private void cancelarIntercambios() {
+        //Ids de todos los transportes del usuario loggeado
+        List<int> transportIds = listTransportUseCase.Execute().Where(T => T.UserId == user.Id).ToList().Select(T => T.Id).ToList();
+        List<Post> posts = listPostUseCase.Execute().Where(P => transportIds.Contains(P.TransportId)).ToList();
+        if (user.banned == false) {
+            //Pongo en pausa todos los post
+            foreach (Post P in posts) {
+                P.paused = true;
+                modifyPostUseCase.Execute(P);
+            }
+        }
+        else {
+            foreach (Post P in posts) {
+                P.paused = false;
+                modifyPostUseCase.Execute(P);
+            }
+        }
+        //Elimino los trades no resueltos
+        List<UnresolvedExchange> trades = unresolvedExchangeListUseCase.Execute().Where(E => transportIds.Contains(E.transporteOfertadoId) || transportIds.Contains(E.transportePosteadoId)).ToList();
+        foreach (UnresolvedExchange U in trades) {
+            deleteUnresolvedExchangeUseCase.Execute(U.Id);
+        }
+    }
+
+    public void Banear() {
+        cancelarIntercambios();
+        user.banned = !user.banned;
+        modifyUserUseCase.Execute(user);
+    }
+
+    private void AbrirListarVehiculos() {
+        listarVehiculos.Cargar();
+    }
+
+    private void AbrirListarBarcos() {
+        listarBarcos.Cargar();
+    }
+
+    private void AbrirListarPublicaciones() {
+        listarPublicaciones.Cargar(user.Id);
+    }
+}

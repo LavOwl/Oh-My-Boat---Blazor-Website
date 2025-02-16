@@ -1,0 +1,16 @@
+@page "/homeemployee"
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+
+<DialogoError @ref=dialogo/>
+
+<Cartel />
+
+<ListarIntercambios />
+
+
+@code {
+
+    DialogoError dialogo = null!;
+
+}

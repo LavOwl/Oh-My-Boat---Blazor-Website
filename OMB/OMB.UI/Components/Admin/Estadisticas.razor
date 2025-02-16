@@ -1,0 +1,155 @@
+﻿@page "/estadisticas"
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject resolvedExchangeListUseCase resolvedExchangeListUseCase
+@inject listSedesUseCase sedesListUseCase
+
+<div class="container">
+    <button class="btn btn-black btn-sm" @onclick="ExportToPdf">Descargar PDF</button>
+    <form class="form-fechas">
+        <div class="form-group">
+            <label class="labels" for="from">Desde:</label>
+            <input id="from" type="date" min="@((DateTime.Today.Year - 120).ToString())-01-01" @bind="from" class="form-control">
+            <label class="labels" for="to">Hasta:</label>
+            <input id="to" type="date" min="@((DateTime.Today.Year - 120).ToString())-01-01" @bind="to" class="form-control">
+        </div>
+    </form>
+</div>
+<br>
+<div class="chart-container">
+    <table>
+        <thead>
+            <th>@if(hay){<p><strong><em>No hay intercambios concretados <br> o no concretados aún.</em></strong></p><br>}else{<strong>Intercambios concretados <br> a no concretados</strong>}</th>
+            <th><strong>Intercambios por sede</strong></th>
+        </thead>
+        <tbody>
+            <tr>
+                <td><p id="intercambios"></p></td>
+                <td><p id="sedes"></p></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+<div class="chart-container">
+    <table>
+        <thead>
+            <th><strong>Tipos de transporte más intercambiados</strong></th>
+        </thead>
+        <tbody>
+            <tr>
+                <td><p id="tipos"></p></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    List<ResolvedExchange> resolvedExchanges = new List<ResolvedExchange>();
+    listElement[] exchanges;
+    List<int> amounts;
+    List<string> names;
+    DateOnly from = DateOnly.FromDateTime(DateTime.Now.AddYears(-120));
+    DateOnly to = DateOnly.FromDateTime(DateTime.Now);
+    bool hay = false;
+    int concreted;
+    int total;
+
+    class listElement {
+        public string type {
+            get; set;
+        }
+        public int exchanges {
+            get; set;
+        }
+        public listElement(string type) {
+            this.type = type;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        resolvedExchanges = resolvedExchangeListUseCase.Execute().Where(exchange => DateOnly.FromDateTime(exchange.fechaYHora) >= from && DateOnly.FromDateTime(exchange.fechaYHora) <= to).ToList();
+        hay = resolvedExchanges.Count() == 0;
+        inicializarIntercambiosResueltos();
+
+        inicializarIntercambiosPorSede();
+
+        inicializarListaTransportes();
+        StateHasChanged();
+       
+    }
+
+    // GRÁFICO INTERCAMBIOS RESUELTOS Y NO RESUELTOS
+    protected async void inicializarIntercambiosResueltos() {
+        concreted = resolvedExchanges.Where(r => r.happen).Count();
+        total = resolvedExchanges.Count();
+
+        var yData = new[] { "Concretados", "No concretados" };
+        var xData = new[] { concreted, total-concreted };
+
+        await JS.InvokeVoidAsync("renderPlotlyPieChart", "intercambios", xData, yData, "Intercambios", 400, 650);
+    }
+
+    // GRÁFICO INTERCAMBIOS POR SEDE
+    protected async void inicializarIntercambiosPorSede() {
+        List<Sede> sedes = sedesListUseCase.Execute();
+        names = new List<string>();
+        amounts = new List<int>();
+        foreach (Sede s in sedes) {
+            names.Add(s.name);
+            amounts.Add(resolvedExchanges.Where(e => e.sede.Id == s.Id).Count());
+        }
+
+        await JS.InvokeVoidAsync("renderPlotlyBarChart", "sedes", names.ToArray(), amounts.ToArray(), "Por Sede", 400, 500);
+
+    }
+
+    // LISTA DE TRANSPORTES MÁS USADOS
+    private async void inicializarListaTransportes() {
+        //var tipos = new[] { "Auto", "Camioneta", "Ciclomotor", "Crucero", "Velero", "Lancha", "Catamaran" };
+        //List<int> valoresList = new List<int>();
+        exchanges = new listElement[7]{new listElement("Auto"), new listElement("Camioneta"), new listElement("Ciclomotor"), new listElement("Crucero"), new listElement("Velero"), new listElement("Lancha"), new listElement("Catamaran")};
+        /*foreach (string tipo in tipos) {
+            valoresList.Add(resolvedExchanges.Where(r => r.transporteOfertado.type == tipo).Count() + resolvedExchanges.Where(r => r.transportePosteado.type == tipo).Count());
+        }*/
+        for(int i = 0; i < 7; i++){
+            exchanges[i].exchanges = resolvedExchanges.Where(r => r.transporteOfertado.type == exchanges[i].type).Count();
+            exchanges[i].exchanges += resolvedExchanges.Where(r => r.transportePosteado.type == exchanges[i].type).Count();
+        }
+
+        //var valores = valoresList.OrderByDescending(t => t.exchanges).ToArray();
+
+        //Si chicos, si, es el algoritmo de ordenación de CADP
+        /*int i, j, p, item;
+        string nombre;
+        for (i = 0; i < 6; i++) {
+            p = i;
+            for (j = i+1; j < 7; j++) {
+                if (valores[j] < valores[p])
+                    p = j;
+                item = valores[p];
+                valores[p] = valores[i];
+                valores[i] = item;
+                nombre = tipos[p];
+                tipos[p] = tipos[i];
+                tipos[i] = nombre;
+            }
+        } Manu x q*/
+        exchanges = exchanges.OrderBy(t => t.exchanges).ToArray();
+        var tipos = exchanges.Select(n => n.type);
+        var valores = exchanges.Select(n => n.exchanges);
+        await JS.InvokeVoidAsync("renderPlotlyHorizontalBarChart", "tipos", valores, tipos, "Intercambios por tipo", 400, 500);
+    }
+
+    // EXPORTAR A PDF
+    private async Task ExportToPdf() {
+        int divide = 1;
+        string aux = "";
+        int j = 0;
+        if(total != 0){divide = total;}
+        foreach(string name in names){
+            aux += $"    • Intercambios en {name}: {amounts[j]}\n";
+            j++;
+        }
+        await JS.InvokeVoidAsync("exportPlotlyChartToPdf", DateTime.Now.ToString("dd/MM/yyyy"), $"Estadísticas registradas entre {from.ToString("dd/MM/yyyy")} y {to.ToString("dd/MM/yyyy")}:\n - Intercambios concretados: {concreted} ({concreted*100.0/divide:F2}%)\n - Intercambios no concretados: {total-concreted} ({(total-concreted)*100.0/divide:F2}%)\n - Intercambios por sede: \n{aux} - Tipo de transporte más intercambiado: {exchanges[6].type} ({exchanges[6].exchanges})");
+    }
+}

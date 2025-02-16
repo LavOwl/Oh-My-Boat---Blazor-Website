@@ -1,0 +1,460 @@
+@page "/exchange/{exchangeId:int?}"
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@rendermode InteractiveServer
+@inject ProtectedSessionStorage sessionStorage
+@inject userListUseCase userListUseCase
+@inject unresolvedExchangeListUseCase unresolvedExchangeListUseCase
+@inject deleteUnresolvedExchangeUseCase deleteUnresolvedExchangeUseCase
+@inject modifyUnresolvedExchangeUseCase modifyUnresolvedExchangeUseCase
+@inject modifyPostUseCase modifyPostUseCase
+@inject listTransportUseCase listTransportUseCase
+@inject listPostUseCase listPostUseCase
+@inject offerListUseCase offerListUseCase
+@inject shipListUseCase shipListUseCase
+@inject vehicleListUseCase vehicleListUseCase
+@inject listShipImagesUseCase listShipImagesUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+@inject listSedesUseCase listSedesUseCase
+@inject NavigationManager Navegador
+
+<DialogoConfirmacion @ref="dialogoAccept" OnConfirmado="accept"/>
+<DialogoConfirmacion @ref="dialogoCancel" OnConfirmado="cancel"/>
+<DialogoError @ref="dialogo"/>
+
+@if (!string.IsNullOrEmpty(cartelito) && mostrarCartel) {
+    <div class="alert alert-info">
+        @cartelito
+        <button class="btn" @onclick="()=>setFalse()" >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" class="bi bi-x-lg" viewBox="0 0 16 16">
+                <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z"/>
+            </svg>
+        </button>
+    </div>
+}
+@if (isEmployee) {
+    <div> html para empleados? </div>
+} else if (isParticipant) { // is owner or offerer
+    if (ownerTransport != null && offererTransport != null) {       //sino pones este if renderiza antes de conseguir las variables y detona (anashe)
+        <body>
+            <div class="exchange-container">
+                <div class="user-info">
+                    <div class="img">
+                        <img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(imgOfferer))"/>
+                    </div>
+                    <h2 style="margin-bottom:1rem">Ofertante: @offerer.userName</h2>
+                    <div class="transport-info">
+                        <table class="table table-striped table-bordered">
+                            <thead>
+                                <tr>
+                                    <th colspan="2" class="text-center">Características</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><p><b>Tipo</b></p></td>
+                                    <td><p>@offererTransport.type</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Modelo</b></p></td>
+                                    <td><p>@offererTransport.model</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Patente</b></p></td>
+                                    <td><p>@offererTransport.plate</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Descripción</b></p></td>
+                                    <td><p>@offererTransport.description</p></td>
+                                </tr>
+                                @if (isVehicle(offererTransport.Id)) {
+                                    <tr>
+                                        <td><p><b>Kilómetros</b></p></td>
+                                        <td><p>@offererVehicle.kms</p></td>
+                                    </tr>
+                                    @if (offererTransport.type != "Ciclomotor") {
+                                        <tr>
+                                            <td><p><b>Puertas</b></p></td>
+                                            <td><p>@offererVehicle.doors</p></td>
+                                        </tr>
+                                    }
+                                } else {
+                                    <tr>
+                                        <td><p><b>Eslora</b></p></td>
+                                        <td><p>@offererShip.eslora m</p></td>
+                                    </tr>
+                                    <tr>
+                                        <td><p><b>Manga</b></p></td>
+                                        <td><p>@offererShip.manga m</p></td>
+                                    </tr>
+                                    <tr>
+                                        <td><p><b>Calado</b></p></td>
+                                        <td><p>@offererShip.calado m</p></td>
+                                    </tr>
+                                    <tr>
+                                        <td><p><b>Tiene motor</b></p></td>
+                                        <td><p>@hasEngineToText(offererShip.hasEngine)</p></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="middle-info">
+                    <div class="user-info" style="width: 100%;padding-inline:3rem;">
+                        <h2>Pacto Ofrecido</h2>
+                        <div class="transport-info">
+                            @if (!isFirstTime()) {
+                                <h3>Horario:</h3>
+                                <p>@actualExchange?.fechaYHora</p>
+                                <h3>Sede:</h3>
+                                <p>@sede?.name</p>
+                            }
+                            @if (isFirstTime()) {
+                                <h5>A estimar</h5>
+                            }
+                        </div>
+                    </div>
+                    <div class="buttons-container">
+                        @if (!isAccepted() && !isMyTurn()) {
+                            <p>Esperando a que el usuario acepte la oferta u ofrezca una nueva fecha</p>
+                        }
+                        <div class="buttons">
+                            @if (!isAccepted()) {
+                                @if (isMyTurn()) {
+                                    @if (!isFirstTime()) {
+                                        <button class="accept" @onclick="confirmarAccept">Aceptar Intercambio</button>
+                                    }
+                                    <button class="try" data-bs-toggle="modal"data-bs-target="#proponerHorarioModal" @onclick="() => Try(actualExchange)">Ofrecer horario</button>
+                                } else {
+                                }
+                                <button class="cancel" @onclick="confirmarCancel">Cancelar Intercambio</button>
+                            } else {
+                                <h5>Intercambio Aceptado!</h5>
+                            }
+                        </div>
+                    </div>
+                </div>
+                <div class="user-info">
+                    <div class="img">
+                        <img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(imgOwner))"/>
+                    </div>
+                    <h2 style="margin-bottom:1rem">Dueño: @owner.userName</h2>
+                    <div class="transport-info">
+                        <table class="table table-striped table-bordered">
+                            <thead>
+                                <tr>
+                                    <th colspan="2" class="text-center">Características</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><p><b>Tipo</b></p></td>
+                                    <td><p>@ownerTransport.type</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Modelo</b></p></td>
+                                    <td><p>@ownerTransport.model</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Patente</b></p></td>
+                                    <td><p>@ownerTransport.plate</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Descripción</b></p></td>
+                                    <td><p>@ownerTransport.description</p></td>
+                                </tr>
+                                @if (isVehicle(ownerTransport.Id)) {
+                                    <tr>
+                                        <td><p><b>Kilómetros</b></p></td>
+                                        <td><p>@ownerVehicle.kms</p></td>
+                                    </tr>
+                                    @if (ownerTransport.type != "Ciclomotor") {
+                                        <tr>
+                                            <td><p><b>Puertas</b></p></td>
+                                            <td><p>@ownerVehicle.doors</p></td>
+                                        </tr>
+                                    }
+                                } else {
+                                    <tr>
+                                        <td><p><b>Eslora</b></p></td>
+                                        <td><p>@ownerShip.eslora m</p></td>
+                                    </tr>
+                                    <tr>
+                                        <td><p><b>Manga</b></p></td>
+                                        <td><p>@ownerShip.manga m</p></td>
+                                    </tr>
+                                    <tr>
+                                        <td><p><b>Calado</b></p></td>
+                                        <td><p>@ownerShip.calado m</p></td>
+                                    </tr>
+                                    <tr>
+                                        <td><p><b>Tiene motor</b></p></td>
+                                        <td><p>@hasEngineToText(ownerShip.hasEngine)</p></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </body>
+    }
+}
+
+<ProponerHorario @ref="proponerHorario" OnProponerHorario="HorarioPropuesto" />
+<Emails @ref=emails/>
+
+@code {
+    DialogoConfirmacion dialogoAccept = null!;      // dos dialogos para las dos posibles confirmaciones
+    DialogoConfirmacion dialogoCancel = null!;         // para cada confirmacion tengo que hacer un onConfirmado distinto
+    DialogoError dialogo = null!;
+    Emails emails = null!;
+
+    [Parameter] public int exchangeId { get; set; }
+    UnresolvedExchange actualExchange = new UnresolvedExchange();
+    Sede? sede;
+
+    User owner = new User();
+    Transport? ownerTransport;
+    Vehicle ownerVehicle = new Vehicle();
+    Ship ownerShip = new Ship();
+
+    User offerer = new User();
+    Transport? offererTransport;
+    Vehicle offererVehicle = new Vehicle();
+    Ship offererShip = new Ship();
+
+    byte[] imgOwner = new byte[0];
+    byte[] imgOfferer = new byte[0];
+
+    int loggedUserId = 0;
+    bool isEmployee = false;
+    bool isParticipant = true;
+
+    ProponerHorario proponerHorario = null!;
+    string? cartelito;
+    bool mostrarCartel;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            //Extrae la información del user loggeado
+            var getLoggedUserId = await sessionStorage.GetAsync<int>("userId");
+            loggedUserId = getLoggedUserId.Success ? getLoggedUserId.Value : 0;
+            var getIsEmployee  = await sessionStorage.GetAsync<bool>("isEmployee");
+            isEmployee = getIsEmployee .Success ? getIsEmployee.Value : false;
+
+            // get Exchange from its Id
+            actualExchange = await Task.Run(() => unresolvedExchangeListUseCase.Execute().Find(e => e.Id == exchangeId)) ?? throw new Exception("exchange not found");
+            if (actualExchange == null)
+                throw new Exception("Intercambio no encontrado");
+
+            // Obtener la sede
+            sede = listSedesUseCase.Execute().Where(sede => sede.Id == actualExchange.sedeId).SingleOrDefault();
+            if (sede == null)
+                throw new Exception("Sede no encontrada");
+
+            // get info del cartelito
+            var getCartelito  = await sessionStorage.GetAsync<string>("cartel?");
+            cartelito = getCartelito.Success ? getCartelito.Value : null;
+            mostrarCartel = true;
+            await sessionStorage.DeleteAsync("cartel?");
+
+            // Load the info after actualExchange is initialized
+            loadInfo();
+        }
+    }
+
+    private void loadInfo() { //cargar info de transportes y los usuarios
+        List<Transport> transports = listTransportUseCase.Execute();  // lista de transportes para conseguir los transportes del owner y offerer
+        ownerTransport = transports.Where(t => t.Id == actualExchange.transportePosteadoId).SingleOrDefault() ?? throw new Exception("transport not found");
+        offererTransport = transports.Where(t => t.Id == actualExchange.transporteOfertadoId).SingleOrDefault() ?? throw new Exception("transport not found");
+
+        // Busco la primer imágen de cada transporte
+        imgOwner = getImage(ownerTransport.Id);
+        imgOfferer = getImage(offererTransport.Id);
+
+        // Busco el resto de datos dependiendo de si son barcos o vehículos
+        getDetailsOwner(ownerTransport.Id);
+        getDetailsOfferer(offererTransport.Id);
+
+        List<User> users = userListUseCase.Execute();   // lista de usuarios para conseguir sus infos a través de sus transportes.
+        owner = users.Where(u => u.Id == ownerTransport.UserId).SingleOrDefault() ?? throw new Exception("user not found");
+        offerer = users.Where(u => u.Id == offererTransport.UserId).SingleOrDefault() ?? throw new Exception("user not found");
+
+        // aviso que cambia el estado, osea que se consiguieron los datos para poder renderizar el html
+        StateHasChanged();
+    }
+
+    private string hasEngineToText(bool hasEngine) {
+        if (hasEngine) return "Si";
+        else return "No";
+    }
+
+    private byte[] getImage(int transportId)
+    {
+        var vehicleImages = listVehicleImagesUseCase.Execute();
+        var shipImages = listShipImagesUseCase.Execute();
+
+        if (isVehicle(transportId))
+        {
+            var vehicleImage = vehicleImages.FirstOrDefault(img => img.VehicleId == transportId);
+            return vehicleImage?.Image ?? new byte[0]; // Devuelve la imagen si se encuentra, de lo contrario devuelve un array vacío
+        }
+        else
+        {
+            var shipImage = shipImages.FirstOrDefault(img => img.ShipId == transportId);
+            return shipImage?.Image ?? new byte[0]; // Devuelve la imagen si se encuentra, de lo contrario devuelve un array vacío
+        }
+    }
+
+    private void getDetailsOwner(int transportId) {
+        if (isVehicle(transportId)) {
+            ownerVehicle = vehicleListUseCase.Execute().Find(vehicle => vehicle.Id == transportId) ?? throw new Exception("vehicle not found");
+        } else {
+            ownerShip = shipListUseCase.Execute().Find(ship => ship.Id == transportId) ?? throw new Exception("ship not found");
+        }
+    }
+
+    private void getDetailsOfferer(int transportId) {
+        if (isVehicle(transportId)) {
+            offererVehicle = vehicleListUseCase.Execute().Find(vehicle => vehicle.Id == transportId) ?? throw new Exception("vehicle not found");
+        } else {
+            offererShip = shipListUseCase.Execute().Find(ship => ship.Id == transportId) ?? throw new Exception("ship not found");
+        }
+    }
+
+    private bool isVehicle (int id) {
+        return !shipListUseCase.Execute().Any(S => S.Id == id);
+    }
+
+    private bool iAmOwner() {
+        return owner.Id == loggedUserId;
+    }
+
+    private bool iAmOfferer() {
+        return offerer.Id == loggedUserId;
+    }
+
+    private bool isMyTurn() {
+        return (actualExchange.state == "OffererChooses" && iAmOfferer()) || (actualExchange.state == "OffererStart" && iAmOwner()) || (actualExchange.state == "OwnerChooses" && iAmOwner());
+    }
+
+    private bool isFirstTime() {
+        return actualExchange.state == "OffererStart";
+    }
+
+    private bool isAccepted() {
+        return actualExchange.state == "Accepted";
+    }
+
+    private void confirmarAccept() {
+        dialogoAccept.Mostrar("¿Seguro que deseas aceptar el intercambio?");
+    }
+
+    private void accept() {
+        if(listSedesUseCase.Execute().Where(s => s.Id == actualExchange.sedeId).SingleOrDefault().isActive){
+        actualExchange.state = "Accepted";
+        modifyUnresolvedExchangeUseCase.Execute(actualExchange);
+
+        StateHasChanged();
+        mostrarCartel = true;
+        cartelito = "Intercambio Aceptado Exitosamente";
+
+        // Envia mail al otro involucrado
+        User user = getUser();
+        string title = getTitle();
+        emails.SendEmail(
+            "¡Intercambio aceptado!", // Subject
+            user.mail, // Mail
+            "¡Aceptaron tu intercambio!", // Titulo
+			$@"
+			<p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>Tu intercambio de <b>{title}</b> fue aceptado</p>
+			<p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Podés entrar a la página para ver mayor información</p>
+			" // Cuerpo
+        );
+        }else{
+            dialogo.Mostrar("Esta sede ya no está en funcionamiento. Podés sugerir una nueva ubicación.");
+        }
+    }
+
+    public void Try(UnresolvedExchange? exchange) {
+        if (exchange == null)
+            throw new Exception("no se debería llegar acá de todas formas");
+        proponerHorario.Cargar(exchange);
+    }
+
+    private void confirmarCancel() {
+        dialogoCancel.Mostrar("¿Seguro que deseas cancelar el intercambio?");
+    }
+
+    private User getUser() {
+        if (iAmOwner()) {
+            return offerer;
+        } else {
+            return owner;
+        }
+    }
+
+    private string getTitle() {
+        if (ownerTransport == null)
+            throw new Exception("No se debería llegar acá de todas formas");
+        Post post = listPostUseCase.Execute().Find(post => post.TransportId == ownerTransport.Id) ?? throw new Exception("post not found");
+        return post.Title;
+    }
+
+    private async Task cancel() {
+        if (ownerTransport == null || offererTransport == null)
+            throw new Exception("No se debería llegar acá de todas formas");
+        // borro el intercambio actual
+        deleteUnresolvedExchangeUseCase.Execute(exchangeId);
+        // consigo la lista de posts de los vehiculos y seteo su paused a false (osea, NO pausados)
+        List<Post> postsACambiar = listPostUseCase.Execute().Where(Post => Post.TransportId == ownerTransport.Id || Post.TransportId == offererTransport.Id).ToList();
+        postsACambiar.ForEach(post => post.paused = false);
+        postsACambiar.ForEach(post => modifyPostUseCase.Execute(post));
+        
+        // para el titulo del mail
+        Post post = listPostUseCase.Execute().Find(post => post.TransportId == ownerTransport.Id) ?? throw new Exception("post not found");
+        // Envia mail al otro involucrado
+        User user = getUser();
+        emails.SendEmail(
+			"Intercambio cancelado", // Subject
+			user.mail, // Mail
+			"Intercambio cancelado", // Titulo
+			$@"
+			<p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>Tu intercambio de <b>{post.Title}</b> ha sido cancelado</p>
+			<p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Podés entrar a la página para seguir buscando el transporte de tus sueños</p>
+			" // Cuerpo
+		);
+
+        // envio el cartelcito notificando que se canceló el intercambio con exito y navego al home
+        await sessionStorage.SetAsync("cartel?", "Intercambio cancelado exitosamente");
+        Navegador.NavigateTo("/", true);
+    }
+
+    public async Task HorarioPropuesto() {
+        // Obtener la sede de vuelta para que se actualice
+        sede = listSedesUseCase.Execute().Where(sede => sede.Id == actualExchange.sedeId).SingleOrDefault();
+        if (sede == null)
+            throw new Exception("Sede no encontrada");
+        StateHasChanged();
+        mostrarCartel = true;
+        cartelito = "Horario propuesto con éxito";
+
+        // Envia mail al otro involucrado
+        User user = getUser();
+        string title = getTitle();
+        emails.SendEmail(
+            "¡Horario propuesto!", // Asunto
+            user.mail, // Destinatario
+            "Recibiste una propuesta de horario", // Título
+                $@"
+            <p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>Tu intercambio de <b>{title}</b> recibió una propuesta de horario</p>
+            <p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Podés entrar a la página para ver la propuesta</p>
+            " // Cuerpo
+        );
+    }
+
+    private void setFalse () {
+      mostrarCartel = false;
+    }
+}

@@ -1,0 +1,186 @@
+@page "/vehiclepost/{transportId:int?}"
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+@inject listPostUseCase listPostUseCase
+@inject vehicleListUseCase vehicleListUseCase
+@inject userListUseCase userListUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+@inject offerListUseCase offerListUseCase
+@inject modifyOfferUseCase modifyOfferUseCase
+@inject deletePostUseCase deletePostUseCase
+@inject NavigationManager Navegador
+@rendermode InteractiveServer
+
+@if (actualPost != null && actualVehicle != null) { // pareces que sin este if estaban habiendo problemas para cargar la pagina a veces (como que renderizaba antes de que es hayan conseguido las variables)
+    <div class="vehicle-post-container">
+        <div class="vehicle-post">
+            <div class="carousel-container">
+                <div id="carousel" class="carousel slide">
+                    <div class="carousel-inner">
+                        <div class="carousel-item active">
+                            <img class="vehicle-post-img" src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(images[i]))"
+                                 height="450px" width="100%" style="object-fit: cover;" />
+                        </div>
+                    </div>
+                    <button class="carousel-control-prev" type="button" @onclick=MoveLeft>
+                        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                        <span class="visually-hidden">Previous</span>
+                    </button>
+                    <button class="carousel-control-next" type="button" @onclick=MoveRight>
+                        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                        <span class="visually-hidden">Next</span>
+                    </button>
+                </div>
+            </div>
+            <h2 class="vehicle-post-title">@actualPost.Title</h2>
+            <div class="vehicle-post-info">
+                <div class="vehicle-post-info-item">
+                    <i class='bx bxs-vehicle icon'></i>
+                    <h5>Tipo:  @actualVehicle.type</h5>
+                </div>
+            </div>
+            <div class="vehicle-post-info">
+                <div class="vehicle-post-info-item">
+                    <i class='bx bxs-vehicle icon'></i>
+                    <h5>Modelo:  @actualVehicle.model</h5>
+                </div>
+            </div>
+            <div class="vehicle-post-info">
+                <div class="vehicle-post-info-item">
+                    <i class='bx bxs-vehicle icon'></i>
+                    <h5>Kilometros:  @actualVehicle.kms</h5>
+                </div>
+            </div>
+            <div class="vehicle-post-info">
+                <div class="vehicle-post-info-item">
+                    <i class='bx bxs-vehicle icon'></i>
+                    <h5>Puertas:  @actualVehicle.doors</h5>
+                </div>
+            </div>
+            <div class="vehicle-post-info">
+                <div class="vehicle-post-info-item">
+                    <i class='bx bxs-vehicle icon'></i>
+                    <h5>Patente:  @actualVehicle.plate</h5>
+                </div>
+            </div>
+            <p class="vehicle-post-description">@actualVehicle.description</p>
+            <hr>
+            @if ((loggedUserId != 0) && (!isOwner) && (!isEmployee) && (!actualPost.paused)) {
+                <button class="btn btn-primary" @onclick="Ofertar" data-bs-toggle="modal" data-bs-target="#listarBarcosModal">Ofertar</button>
+            }
+            @if (isOwner && !actualPost.paused) {
+                <button class="btn btn-primary" @onclick="CargarOfertas" data-bs-toggle="modal" data-bs-target="#listarOfertasModal">Ver Ofertas</button>
+            }
+            @if (actualPost.paused) {
+                <div class="texto_pausa">
+                    <p><i class='bx bxs-error'></i><strong>  Publicación Pausada </strong></p>
+                </div>
+            }
+            @if (loggedUserId == 1 && isEmployee) {
+                <button class="btn btn-danger" @onclick="() => confirmarEliminarPost()">Eliminar post</button>
+            }
+        </div>
+    </div>
+}
+
+<ListarBarcosAOfertar @ref="listarBarcos" />
+<ListarOfertasAPost @ref="listarOfertas" />
+<DialogoConfirmacion @ref="dialogo" OnConfirmado="eliminarPost"/>
+
+@code {
+    [Parameter]
+    public int? transportId {get; set;}
+    bool isOwner;
+    Post actualPost = new Post();
+    Vehicle actualVehicle = new Vehicle();
+
+    ListarBarcosAOfertar listarBarcos = null!; 
+    ListarOfertasAPost listarOfertas = null!;
+
+    List<byte[]> images = new List<byte[]>(); // para las imagenes del post
+    int limit = 0;  	  // para manejar el cap de imagenes
+    int i = 0;
+    int loggedUserId = 0;
+    bool isEmployee;
+    DialogoConfirmacion dialogo = null!;
+
+
+    protected override void OnInitialized() {
+        images.Add(new byte[0]);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) {
+        if (firstRender) {
+            //Extrae el ID del usuario loggeado del sessionStorage
+            var result3  = await sessionStorage.GetAsync<bool>("isEmployee");
+            isEmployee = result3.Success ? result3.Value : false;
+            var getLoggedUserId = await sessionStorage.GetAsync<int>("userId");
+            loggedUserId = getLoggedUserId.Success ? getLoggedUserId.Value : 0;
+
+            //Busco al owner del post
+            actualPost = await Task.Run(() => listPostUseCase.Execute().Find(post => post.TransportId == transportId)) ?? throw new Exception("post not found");
+
+            if (actualPost != null) {
+                actualVehicle = await Task.Run(() => vehicleListUseCase.Execute().Find(vehicle => vehicle.Id == actualPost.TransportId)) ?? throw new Exception("vehicle not found");
+                if (actualVehicle != null) {
+                    User owner = await Task.Run(() => userListUseCase.Execute().Find(user => user.Id == actualVehicle.UserId)) ?? throw new Exception("user not found");
+
+                    //Checkeo si el owner y el usuario loggeado son el mismo user y guardo el resultado
+                    isOwner = ((owner.Id == loggedUserId) && !isEmployee);
+
+                    GetImages();
+                }
+            }
+
+            // le aviso a blazor que se tiene que re-renderizar la pagina
+            StateHasChanged();
+        }
+    }
+
+    private void Ofertar() {
+        listarBarcos.Cargar(actualVehicle);
+    }
+
+    private void CargarOfertas() {
+        listarOfertas.getOfferList(actualPost);
+    }
+
+    private void GetImages() {
+        images = new List<byte[]>();
+        var vehicleImages = listVehicleImagesUseCase.Execute().Where(img => img.VehicleId == actualVehicle.Id);
+
+        foreach (var img in vehicleImages) {
+            images.Add(img.Image);
+        }
+
+        limit = images.Count() - 1;
+    }
+
+    public void MoveRight() {  // para moverse por el slider de imagenes
+        if (i < limit) i++;
+        else i = 0;
+
+        StateHasChanged();
+    }
+
+    public void MoveLeft() {  // para moverse por el slider de imagenes
+        if (i > 0) i--;
+        else i = limit;
+
+        StateHasChanged();
+    }
+
+    public void confirmarEliminarPost() {
+        dialogo.Mostrar("¿Seguro qué deseas eliminar el post?");
+    }
+    public void eliminarPost() {
+        List<Offer> ofertas = offerListUseCase.Execute().Where(o => o.transportePosteadoId == actualPost.TransportId).ToList();
+	    foreach(Offer offer in ofertas){
+		    offer.transportePosteadoId = 1;
+		    modifyOfferUseCase.Execute(offer);
+	    }
+	    deletePostUseCase.Execute(actualPost.Id);
+	    Navegador.NavigateTo("/");
+    }
+
+}

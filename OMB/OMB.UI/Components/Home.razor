@@ -1,0 +1,265 @@
+﻿@page "/{filtroParam:nonfile?}"
+@rendermode InteractiveServer
+@inject NavigationManager navegador
+@inject listPostUseCase listPostUseCase
+@inject listShipImagesUseCase listShipImagesUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+@inject userListUseCase userListUseCase
+@inject listTransportUseCase listTransportUseCase
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+
+<DialogoError @ref=dialogo/>
+
+@if (shouldDisplay) {
+
+    <Cartel />
+
+    <div class="container-de-containers">
+        <div class="publicaciones-container">
+            @if (posts.Count() == 0) {
+                <h1>No existen publicaciones</h1>
+            }
+            else {
+                <h1 class="publicaciones-title">Publicaciones</h1>
+                int i = 0; @* Lo uso para iterar sobre las fotos *@
+                @foreach (var p in posts) {
+                    <div class="publicacion" @onclick="async () => await browseToPost(p)">
+                        <div class="img">
+                            <img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(_images[i]))" />
+                        </div>
+                        <div class="publicacion-info">
+                            <h3>@p.Title</h3>
+                            <h6>@_descripciones[i]</h6>
+                        </div>
+                    </div>
+                    i++; @* Incremento i para seguir iterando *@
+                }
+            }
+        </div>
+        <div class="ayudasdebusqueda">
+            <div>
+                <p>@posts.Count resultados</p>
+            </div>
+            <form style="padding:0;margin-bottom:1rem;" onsubmit="return false">
+                <input style="width: 100%;" type="text" placeholder="Buscar publicación..." @bind="busqueda">
+                <button class="btn btn-primary" @onclick="()=>aplicarBusqueda()">
+                    Buscar
+                    <i class="bi bi-search"></i>
+                </button>
+            </form>
+            @if (filtrosAplicados.Count != 0) {
+                <div class="filtro-aplicados">
+                    @foreach (string filtro in filtrosAplicados) {
+                        <div @onclick="()=>eliminarFiltro(filtro)" class="filtro-aplicado">
+                            @filtro
+                            <div class="eliminar-filtro"></div>
+                        </div>
+                    }
+                </div>
+            }
+            <div class="filtro">
+                <h4 class="titulo-filtro">Tipo de transporte</h4>
+                @foreach (string tipo in tiposTransporte) {
+                    @if (!esFiltro(tipo)) {
+                        <p @onclick="()=>filtrar(tipo)">@tipo<span class="cantidad-tipo">(@cantidadTipo(tipo))</span></p>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool shouldDisplay = false;
+
+    int userId;
+    private bool isEmployee = true;
+
+    List<Post> allPosts = new List<Post>(); // Primera lista con todos los posts
+    List<Post> postsAux = new List<Post>(); //lista auxiliar para no contar en los filtros los que no se deben
+    List<Post> posts = new List<Post>(); // Lista con los posts después de todos los filtros (busqueda, pausados, propios, filtros)
+    List<Transport> transports = new List<Transport>(); // All transports
+    List<User> users = new List<User>(); // All users
+
+    List<ShipImage> shipImages = new List<ShipImage>(); // All shipImages
+    List<VehicleImage> vehicleImages = new List<VehicleImage>(); // All vehicleImages
+    List<byte[]> _images = new List<byte[]>();
+    List<string> _descripciones = new List<string>();
+
+    DialogoError dialogo = null!;
+
+    [Parameter]
+    public string? filtroParam { get; set; }
+    List<string> tiposTransporte = new List<string> {"Auto", "Camioneta", "Ciclomotor", "Velero", "Crucero", "Lancha", "Catamaran"};
+    List<string> filtrosAplicados = new List<string>();
+
+    public string? busqueda;
+
+    protected override void OnParametersSet() {
+        filtrosAplicados = new List<string>();
+        if (!string.IsNullOrEmpty(filtroParam)) {
+            foreach (string filtro in filtroParam.Split("&")) {
+                filtrosAplicados.Add(filtro);
+            }
+        }
+
+        getPosts();
+        getPhotosAndDescriptions();
+    }
+
+    protected override async Task OnInitializedAsync() {
+        var result3  = await sessionStorage.GetAsync<bool>("isEmployee");
+        isEmployee = result3.Success ? result3.Value : false;
+        // Busco el ID del usuario en la sesión
+        var result2 = await sessionStorage.GetAsync<int>("userId");
+        userId = result2.Success ? result2.Value : 0;
+
+        // Llamo solo una vez a los listUseCase
+        users = userListUseCase.Execute();
+        transports = listTransportUseCase.Execute();
+
+        allPosts = listPostUseCase.Execute();
+        shipImages = listShipImagesUseCase.Execute();
+        vehicleImages = listVehicleImagesUseCase.Execute();
+
+        getPosts();
+
+        // Reordenamos los posts
+        posts = posts.OrderBy(_ => Guid.NewGuid()).ToList();
+
+        // Generamos la lista de fotos y descripciones para ambos tipos de post
+        getPhotosAndDescriptions();
+
+        shouldDisplay = true;
+    }
+
+    private void getPosts() {
+        posts = new List<Post>();
+
+        foreach (Post post in allPosts) {
+            // Buscar el transporte asociado al post
+            Transport? transport = transports.FirstOrDefault(trans => trans.Id == post.TransportId);
+            if (transport == null) {
+                throw new Exception("transport not found");
+            }
+
+            // Buscar el usuario asociado al transporte
+            User? user = users.FirstOrDefault(u => u.Id == transport.UserId);
+            if (user == null) {
+                throw new Exception("user not found");
+            }
+
+            // Si existe un criterio de búsqueda y el post no lo contiene, no se agrega
+            if (!string.IsNullOrEmpty(busqueda) && !contieneBusqueda(post, transport)) {
+                continue;
+            }
+
+            // Añadir el post si no está pausado y si el usuario es un empleado o el usuario no es el mismo
+            if (post.paused || !(isEmployee || user.Id != userId)) {
+                continue;
+            }
+
+            postsAux.Add(post);
+
+            // Si el tipo de transporte no concuerda con el filtro, no se agrega
+            if (!string.IsNullOrEmpty(filtroParam) && !esFiltro(transport.type)) {
+                continue;
+            }
+
+            posts.Add(post);
+        }
+
+        @* busqueda = ""; *@
+    }
+
+    private void getPhotosAndDescriptions() {
+        _descripciones = new List<string>();
+        _images = new List<byte[]>();
+
+        foreach (var post in posts) {
+            var transport = transports.FirstOrDefault(T => T.Id == post.TransportId);
+            if (transport != null) {
+                string descripcion = transport.description;
+                _descripciones.Add(descripcion);
+
+                var shipImage = shipImages.FirstOrDefault(imagen => imagen.ShipId == post.TransportId);
+                var vehicleImage = vehicleImages.FirstOrDefault(imagen => imagen.VehicleId == post.TransportId);
+                byte[]? image = shipImage != null ? shipImage.Image : vehicleImage?.Image;
+
+                if (image != null) {
+                    _images.Add(image);
+                }
+            }
+        }
+    }
+
+    //Método para el redireccionamiento a la publicación
+
+    private async Task browseToPost(Post p) {
+        try {
+            if (IsVehicle(p)) {
+                navegador.NavigateTo("/vehiclepost/" + p.TransportId, true);
+            } else {
+                navegador.NavigateTo("/shippost/" + p.TransportId, true);
+            }
+        }
+        catch (TaskCanceledException) {
+            // Retry navigation if it fails due to a TaskCanceledException (un error bastante raro)
+            await Task.Delay(500); // Wait half a sec before trying again
+            await browseToPost(p); // Retry navigation
+        }
+    }
+
+    //Métodos para la búsqueda entre publicaciones
+
+    private bool contieneBusqueda(Post post, Transport transport) {
+        return (!string.IsNullOrEmpty(busqueda) && ( post.Title.Contains(busqueda) || transport.description.Contains(busqueda) || transport.model.Contains(busqueda) ));
+    }
+
+    private void aplicarBusqueda () {
+        getPosts();
+        posts = posts.OrderBy(_ => Guid.NewGuid()).ToList();
+        getPhotosAndDescriptions();
+
+        StateHasChanged();
+    }
+
+    //Métodos para el manejo de los filtros
+
+    private int cantidadTipo(string tipo) {
+        List<int> transportesPost = postsAux.Select(post => post.TransportId).ToList();
+        return transports.Where(transport => transport.type == tipo && transportesPost.Contains(transport.Id)).Count();
+    }
+
+    private void filtrar(string filtro) {
+        if (string.IsNullOrEmpty(filtroParam)) {
+            navegador.NavigateTo($"/{filtro}", true);
+        } else {
+            navegador.NavigateTo($"/{filtroParam}&{filtro}", true);
+        }
+    }
+
+    private void eliminarFiltro(string filtro) {
+        if (string.IsNullOrEmpty(filtroParam)) {
+            return;
+        }
+        List<string> filtros = filtroParam.Split("&").ToList();
+        filtros.Remove(filtro);
+
+        navegador.NavigateTo($"/{String.Join("&", filtros)}", true);
+    }
+
+    private bool esFiltro(string tipo) {
+        if (string.IsNullOrEmpty(filtroParam)) 
+            return false;
+        return filtroParam.Contains(tipo, StringComparison.OrdinalIgnoreCase);
+    }
+
+    //Métodos auxiliares
+
+    private bool IsVehicle(Post post) {
+        var transport = transports.Find(trans => trans.Id == post.TransportId);
+        return transport != null && (transport.type == "Ciclomotor" || transport.type == "Auto" || transport.type == "Camioneta");
+    }
+}

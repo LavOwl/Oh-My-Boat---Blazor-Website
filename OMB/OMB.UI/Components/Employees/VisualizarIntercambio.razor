@@ -1,0 +1,380 @@
+@page "/visualizarintercambio/{exchangeId:int?}"
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+
+@inject ProtectedSessionStorage sessionStorage
+@inject NavigationManager Navegador
+@inject userListUseCase userListUseCase
+@inject listTransportUseCase listTransportUseCase
+@inject listPostUseCase listPostUseCase
+@inject unresolvedExchangeListUseCase unresolvedExchangeListUseCase
+@inject addResolvedExchangeUseCase addResolvedExchangeUseCase
+@inject addVehicleHistoryUseCase addVehicleHistoryUseCase
+@inject addShipHistoryUseCase addShipHistoryUseCase
+@inject deleteUnresolvedExchangeUseCase deleteUnresolvedExchangeUseCase
+@inject modifyTransportUseCase modifyTransportUseCase
+@inject deletePostUseCase deletePostUseCase
+@inject modifyPostUseCase modifyPostUseCase
+@inject shipListUseCase shipListUseCase
+@inject vehicleListUseCase vehicleListUseCase
+@inject listShipImagesUseCase listShipImagesUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+@inject listSedesUseCase listSedesUseCase
+
+@rendermode InteractiveServer
+
+<DialogoConfirmacion @ref="dialogoAccept" OnConfirmado="accept"/>
+<DialogoConfirmacion @ref="dialogoCancel" OnConfirmado="cancel"/>
+
+<Cartel />
+
+@if (ownerTransport != null && offererTransport != null) {  
+    <body>
+        <div class="exchange-container">
+            <div class="user-info">
+                <div class="img">
+                    <img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(imgOfferer))"/>
+                </div>
+                <h2 style="margin-bottom:1rem">Ofertante: @offerer.userName</h2>
+                <div class="transport-info">
+                    <table class="table table-striped table-bordered">
+                        <thead>
+                            <tr>
+                                <th colspan="2" class="text-center">Características</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><p><b>Tipo</b></p></td>
+                                <td><p>@offererTransport.type</p></td>
+                            </tr>
+                            <tr>
+                                <td><p><b>Modelo</b></p></td>
+                                <td><p>@offererTransport.model</p></td>
+                            </tr>
+                            <tr>
+                                <td><p><b>Patente</b></p></td>
+                                <td><p>@offererTransport.plate</p></td>
+                            </tr>
+                            <tr>
+                                <td><p><b>Descripción</b></p></td>
+                                <td><p>@offererTransport.description</p></td>
+                            </tr>
+                            @if (isVehicle(offererTransport.Id)) {
+                                <tr>
+                                    <td><p><b>Kilómetros</b></p></td>
+                                    <td><p>@offererVehicle.kms</p></td>
+                                </tr>
+                                @if (offererTransport.type != "Ciclomotor") {
+                                    <tr>
+                                        <td><p><b>Puertas</b></p></td>
+                                        <td><p>@offererVehicle.doors</p></td>
+                                    </tr>
+                                }
+                            } else {
+                                <tr>
+                                    <td><p><b>Eslora</b></p></td>
+                                    <td><p>@offererShip.eslora m</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Manga</b></p></td>
+                                    <td><p>@offererShip.manga m</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Calado</b></p></td>
+                                    <td><p>@offererShip.calado m</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Tiene motor</b></p></td>
+                                    <td><p>@hasEngineToText(offererShip.hasEngine)</p></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="middle-info">
+                <div class="user-info" style="width:100%">
+                    <h2>Pacto Ofrecido</h2>
+                    <div class="transport-info">
+                        <h3>Horario:</h3>
+                        <p>@actualExchange.fechaYHora</p>
+                        <h3>Sede:</h3>
+                        <p>@sede.name</p>
+                    </div>
+                </div>
+                <div class="buttons">
+                    <button class="accept" @onclick="confirmarAccept">Aceptar Intercambio</button>
+                    <button class="cancel" @onclick="confirmarCancel">Cancelar Intercambio</button>
+                </div>
+            </div>
+            <div class="user-info">
+                <div class="img">
+                    <img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(imgOwner))"/>
+                </div>
+                <h2 style="margin-bottom:1rem">Dueño: @owner.userName</h2>
+                <div class="transport-info">
+                    <table class="table table-striped table-bordered">
+                        <thead>
+                            <tr>
+                                <th colspan="2" class="text-center">Características</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><p><b>Tipo</b></p></td>
+                                <td><p>@ownerTransport.type</p></td>
+                            </tr>
+                            <tr>
+                                <td><p><b>Modelo</b></p></td>
+                                <td><p>@ownerTransport.model</p></td>
+                            </tr>
+                            <tr>
+                                <td><p><b>Patente</b></p></td>
+                                <td><p>@ownerTransport.plate</p></td>
+                            </tr>
+                            <tr>
+                                <td><p><b>Descripción</b></p></td>
+                                <td><p>@ownerTransport.description</p></td>
+                            </tr>
+                            @if (isVehicle(ownerTransport.Id)) {
+                                <tr>
+                                    <td><p><b>Kilómetros</b></p></td>
+                                    <td><p>@ownerVehicle.kms</p></td>
+                                </tr>
+                                @if (ownerTransport.type != "Ciclomotor") {
+                                    <tr>
+                                        <td><p><b>Puertas</b></p></td>
+                                        <td><p>@ownerVehicle.doors</p></td>
+                                    </tr>
+                                }
+                            } else {
+                                <tr>
+                                    <td><p><b>Eslora</b></p></td>
+                                    <td><p>@ownerShip.eslora m</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Manga</b></p></td>
+                                    <td><p>@ownerShip.manga m</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Calado</b></p></td>
+                                    <td><p>@ownerShip.calado m</p></td>
+                                </tr>
+                                <tr>
+                                    <td><p><b>Tiene motor</b></p></td>
+                                    <td><p>@hasEngineToText(ownerShip.hasEngine)</p></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </body>
+}
+
+@code {
+    [Parameter] public int? exchangeId { get; set; }
+
+    UnresolvedExchange actualExchange = new UnresolvedExchange();
+    Sede sede = new Sede();
+
+    Transport? ownerTransport;
+    Transport? offererTransport;
+
+    Vehicle ownerVehicle = new Vehicle();
+    Vehicle offererVehicle = new Vehicle();
+
+    Ship ownerShip = new Ship();
+    Ship offererShip = new Ship();
+
+    byte[] imgOwner = new byte[0];
+    byte[] imgOfferer = new byte[0];
+
+    User owner = new User();
+    User offerer = new User();
+
+    DialogoConfirmacion dialogoAccept = null!;
+    DialogoConfirmacion dialogoCancel = null!;
+
+    protected override async Task OnInitializedAsync() {
+        // Inicializa las variables para evitar warnings
+        actualExchange = new UnresolvedExchange();
+        sede = new Sede();
+
+        var unresolvedExchangeList = await Task.Run(() => unresolvedExchangeListUseCase.Execute());
+        actualExchange = unresolvedExchangeList.Find(e => e.Id == exchangeId) ?? new UnresolvedExchange();
+
+        // Maneja el caso cuando actualExchange no se encuentra
+        if (actualExchange != null) {
+            sede = listSedesUseCase.Execute().Where(s => s.Id == actualExchange.sedeId).SingleOrDefault() ?? new Sede();
+        }
+
+        // Load the info after actualExchange is initialized
+        loadInfo();
+    }
+
+    private void loadInfo() {
+        List<Transport> transports = listTransportUseCase.Execute();
+
+        // Obtener transportes del owner y offerer
+        ownerTransport = transports.FirstOrDefault(t => t.Id == actualExchange.transportePosteadoId);
+        offererTransport = transports.FirstOrDefault(t => t.Id == actualExchange.transporteOfertadoId);
+
+        // Verificar que los transportes no sean nulos
+        if (ownerTransport == null || offererTransport == null) {
+            throw new Exception("transport not found");
+        }
+
+        // Obtener la primera imagen de cada transporte
+        imgOwner = getImage(ownerTransport.Id);
+        imgOfferer = getImage(offererTransport.Id);
+
+        // Obtener detalles adicionales dependiendo del tipo de transporte (Vehicle o Ship)
+        getDetailsOwner(ownerTransport.Id);
+        getDetailsOfferer(offererTransport.Id);
+
+        List<User> users = userListUseCase.Execute();
+
+        // Obtener información de los usuarios a través de sus transportes
+        owner = users.FirstOrDefault(u => u.Id == ownerTransport.UserId) ?? throw new Exception("user not found");
+        offerer = users.FirstOrDefault(u => u.Id == offererTransport.UserId) ?? throw new Exception("user not found");
+
+        // Notificar que el estado ha cambiado, lo que puede ser necesario para actualizar la interfaz de usuario
+        StateHasChanged();
+    }
+
+    private string hasEngineToText(bool hasEngine) {
+        if (hasEngine) return "Si";
+        else return "No";
+    }
+
+    private byte[] getImage(int transportId) {
+        byte[] defaultImage = new byte[0]; // Imagen por defecto si no se encuentra ninguna
+
+        if (isVehicle(transportId)) {
+            var vehicleImage = listVehicleImagesUseCase.Execute().Find(img => img.VehicleId == transportId);
+            if (vehicleImage != null)
+            {
+                return vehicleImage.Image;
+            }
+        }
+        else {
+            var shipImage = listShipImagesUseCase.Execute().Find(img => img.ShipId == transportId);
+            if (shipImage != null)
+            {
+                return shipImage.Image;
+            }
+        }
+
+        return defaultImage; // Retornar la imagen por defecto si no se encontró ninguna imagen válida
+    }
+
+    private void getDetailsOwner(int transportId) {
+        if (isVehicle(transportId)) {
+            ownerVehicle = vehicleListUseCase.Execute().Find(vehicle => vehicle.Id == transportId) ?? throw new Exception("vehicle not found");
+        } else {
+            ownerShip = shipListUseCase.Execute().Find(ship => ship.Id == transportId) ?? throw new Exception("ship not found");
+        }
+    }
+
+    private void getDetailsOfferer(int transportId) {
+        if (isVehicle(transportId)) {
+            offererVehicle = vehicleListUseCase.Execute().Find(vehicle => vehicle.Id == transportId) ?? throw new Exception("vehicle not found");
+        } else {
+            offererShip = shipListUseCase.Execute().Find(ship => ship.Id == transportId) ?? throw new Exception("ship not found");
+        }
+    }
+
+    private bool isVehicle (int id) {
+		return !shipListUseCase.Execute().Any(S => S.Id == id);
+	}
+
+    public void confirmarAccept () {
+        dialogoAccept.Mostrar("¿Seguro que deseas marcar este intercambio como realizado?");
+    }
+
+    private int cargarAlHistorial (int Id) {
+        int Tid = 0;
+        Vehicle? vehicle = vehicleListUseCase.Execute().Where(V => V.Id == Id).SingleOrDefault();
+        if (vehicle != null) {
+            VehicleHistory vehicleHistory = copyVehicle(vehicle);
+            addVehicleHistoryUseCase.Execute(vehicleHistory);
+            Tid = vehicleHistory.Id;
+        }
+        else {
+            Ship? ship = shipListUseCase.Execute().Where(S => S.Id == Id).SingleOrDefault();
+            if (ship != null) {
+                ShipHistory shipHistory = copyShip(ship);
+                addShipHistoryUseCase.Execute(shipHistory);
+                Tid = shipHistory.Id;
+            }
+        }
+        return Tid;
+    }
+
+    public void agregarIntercambio(bool happen) {
+        int offerTransportId = cargarAlHistorial(actualExchange.transporteOfertadoId);
+        int postedTransportId = cargarAlHistorial(actualExchange.transportePosteadoId);
+        addResolvedExchangeUseCase.Execute(new ResolvedExchange(sede.Id, postedTransportId, offerTransportId, happen));
+    }
+
+    public void deletePost(int id) {
+        Post? post = listPostUseCase.Execute().Where(P => P.TransportId == id).SingleOrDefault();
+        if (post != null) {
+            deletePostUseCase.Execute(post.Id);
+        }
+    }
+
+    public void unpausePost(int id) {
+        Post? post = listPostUseCase.Execute().Where(P => P.TransportId == id).SingleOrDefault();
+        if (post != null) {
+            post.paused = false;
+            modifyPostUseCase.Execute(post);
+        }
+    }
+
+    public void accept () {
+        if (ownerTransport == null || offererTransport == null)
+            throw new Exception("No se debería llegar acá de todas formas");
+        //Borro los post de los vehiculos
+        deletePost(ownerTransport.Id);
+        deletePost(offererTransport.Id);
+        //Agrego el intercambio resuelto y borro el no resuelto
+        agregarIntercambio(true);
+        deleteUnresolvedExchangeUseCase.Execute(actualExchange.Id);
+        //Cambiando dueños
+        ownerTransport.UserId = offerer.Id;
+        offererTransport.UserId = owner.Id;
+        modifyTransportUseCase.Execute(ownerTransport);
+        modifyTransportUseCase.Execute(offererTransport);
+        //Redirigo al historial de intercambios
+        Navegador.NavigateTo("listarintercambiosresueltos", true);
+    }
+
+    public void confirmarCancel () {
+        dialogoCancel.Mostrar("¿Seguro que deseas marcar este intercambio como no realizado?");    
+    }
+
+    public void cancel () {
+        if (ownerTransport == null || offererTransport == null)
+            throw new Exception("No se debería llegar acá de todas formas");
+        //Despauso los post
+        unpausePost(ownerTransport.Id);
+        unpausePost(offererTransport.Id);
+        //Agrego el intercambio resuelto y borro el no resuelto
+        agregarIntercambio(false);
+        deleteUnresolvedExchangeUseCase.Execute(actualExchange.Id);
+        //Redirigo al historial de intercambios
+        Navegador.NavigateTo("listarintercambiosresueltos", true);
+    }
+
+    public VehicleHistory copyVehicle (Vehicle V) {
+        return new VehicleHistory(V.UserId, V.type, V.plate, V.description, V.model, V.kms, V.doors);
+    }
+
+    public ShipHistory copyShip (Ship S) {
+        return new ShipHistory(S.UserId, S.type, S.plate, S.description, S.model, S.eslora, S.manga, S.calado, S.hasEngine);
+    }
+
+}

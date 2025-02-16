@@ -1,0 +1,41 @@
+@page "/buscarperfil"
+@inject NavigationManager Navegador
+@inject userListUseCase userListUseCase
+@inject employeeListUseCase employeeListUseCase
+@rendermode InteractiveServer
+
+<DialogoError @ref=dialogo/>
+
+<form onsubmit="return false">
+    <input type="text" placeholder="Buscar perfil..." @bind="searchTerm">
+    <button class="btn btn-primary" @onclick="SubmitForm">
+        Buscar
+        <i class="bi bi-search"></i>
+    </button>
+</form>
+
+@code {
+    DialogoError dialogo = null!;
+    string? searchTerm;
+
+    private void SubmitForm() {
+        if (string.IsNullOrEmpty(searchTerm)) {
+            dialogo.Mostrar("Escriba un nombre de usuario para buscar");
+            return;
+        }
+        if (employeeListUseCase.Execute().Find(item => item.userName == searchTerm) != null) {
+            if (employeeListUseCase.Execute().Find(item => item.userName == searchTerm)?.Id == 1) {
+                Navegador.NavigateTo("/profileadmin/" + searchTerm, true);
+                return;
+            }
+            Navegador.NavigateTo("/profileemployee/" + searchTerm, true); 
+            return;
+        }
+        if (userListUseCase.Execute().Find(item => item.userName == searchTerm) != null) {
+            Navegador.NavigateTo("/profile/" + searchTerm, true);
+            return;
+        }
+        dialogo.Mostrar("El usuario " + searchTerm + " no existe.");
+        
+    }
+}

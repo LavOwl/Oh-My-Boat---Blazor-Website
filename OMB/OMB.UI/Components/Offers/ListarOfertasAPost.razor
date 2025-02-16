@@ -1,0 +1,121 @@
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject NavigationManager Navegador
+@inject ProtectedSessionStorage sessionStorage
+@inject userListUseCase userListUseCase
+@inject listTransportUseCase listTransportUseCase
+@inject offerListUseCase offerListUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+@inject listShipImagesUseCase listShipImagesUseCase
+
+@rendermode InteractiveServer
+
+<div class="modal fade" id="listarOfertasModal" tabindex="-1" data-backdrop="static" aria-labelledby="exampleModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h1 class="modal-title fs-5" id="exampleModalLabel">Ofertas Realizadas</h1>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+        <div class="modal-body form-body">
+           @if (ofertas.Any()) {
+                int i = 0;
+                <table class="table table-striped table-bordered">
+                    <thead>
+                        <tr>
+                            <th>IMAGEN</th>
+                            <th>TIPO</th>
+                            <th>MODELO</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var offer in ofertas){
+                                <tr @onclick="() => irAOferta(offer)" style="cursor:pointer;">
+                                    <td>
+                                        <img src="@string.Format("data:image/jpeg;base64,{0}", Convert.ToBase64String(_images[i]))"
+                                        height="80px" width="80px" />
+                                        </td>
+                                    <td>@_tipos[i]</td>
+                                    <td>@_modelos[i]</td>
+                                </tr>
+                                i++;
+                            }
+                    </tbody>
+                </table>
+            } else {
+                <p>No recibiste ofertas aún</p>
+            } 
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-danger" data-bs-dismiss="modal">Cerrar</button>
+        </div>
+      </div>
+    </div>
+</div>
+
+@code {
+    List<Offer> ofertas = new List<Offer>();
+    List<Transport> transports = new List<Transport>();
+    List<ShipImage> shipImages = new List<ShipImage>();
+    List<VehicleImage> vehicleImages = new List<VehicleImage>();
+    List<string> _tipos = new List<string>();
+    List<string> _modelos = new List<string>();
+    List<byte[]> _images = new List<byte[]>();
+    int loggedUserId;
+    Transport? postedTransport;
+    Post post = new Post();
+
+    protected override async Task OnInitializedAsync() {
+        var getloggedUserId = await sessionStorage.GetAsync<int>("userId");
+        loggedUserId = getloggedUserId.Success ? getloggedUserId.Value : 0;
+    }
+
+    public void getOfferList (Post post) {
+        this.post = post;
+        var transportList = listTransportUseCase.Execute();
+        postedTransport = transportList.Find(transport => transport.Id == post.TransportId);
+        if (postedTransport == null)
+            throw new Exception("Transporte no encontrado");
+        GetOfertas();
+        StateHasChanged();
+    }
+
+    public string getOfferTarget(Offer offer) {
+        if (postedTransport == null)
+            throw new Exception("No se debería llegar acá de todas formas");
+        User? postedTransportOwner = userListUseCase.Execute().Find(user => user.Id == postedTransport.UserId);
+        return (postedTransportOwner != null) ? postedTransportOwner.userName : "";
+    }
+
+    private void GetOfertas() {
+        ofertas = offerListUseCase.Execute().Where(o => o.transportePosteadoId == post.TransportId).ToList();
+        ofertas.RemoveAll(o => o.state != "active");
+        transports = listTransportUseCase.Execute();
+        shipImages = listShipImagesUseCase.Execute();
+        vehicleImages = listVehicleImagesUseCase.Execute();
+
+        foreach (var oferta in ofertas) {
+            Transport aux = transports.Find(T => T.Id == oferta.transporteOfertadoId) ?? throw new Exception("transport not found");
+            string tipo = aux.type;
+            string modelo = aux.model;
+            _tipos.Add(tipo);
+            _modelos.Add(modelo);
+
+            byte[]? image = (0 != shipImages.Where(imagen => imagen.ShipId == oferta.transporteOfertadoId).Count()) ? shipImages.Where(imagen => imagen.ShipId == oferta.transporteOfertadoId).First().Image : vehicleImages.Where(imagen => imagen.VehicleId == oferta.transporteOfertadoId).First().Image;
+            _images.Add(image);
+        }
+    }
+
+    private void irAOferta (Offer offer) {
+        if (isVehicle(offer.transporteOfertadoId)) {
+            Navegador.NavigateTo("visualizarofertavehicle/" + offer.Id, true);
+        }
+        else {
+            Navegador.NavigateTo("visualizarofertaship/" + offer.Id, true);
+        }
+    }
+
+    private bool isVehicle (int id) {
+        return vehicleImages.Any(I => I.VehicleId == id);
+    }
+
+}

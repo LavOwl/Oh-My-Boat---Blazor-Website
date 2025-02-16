@@ -1,0 +1,96 @@
+@page "/cambiarcontraseña"
+@inject NavigationManager navegador
+@inject userListUseCase userListUseCase
+@inject modifyUserUseCase modifyUserUseCase
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+
+<DialogoError @ref=dialogo/>
+
+<body>
+    <div class="container">
+        <div class="row justify-content-center mt-5">
+            <div class="col-md-8">
+                <div class="card border-dark">
+                    <div class="card-body">
+                        <h1 class="h3 mb-4 text-center">Cambiar contraseña</h1>
+                        <form>
+                            <div class="form-group">
+                                <input type="password" placeholder="Clave actual" @bind="claveActual" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <input type="password" placeholder="Nueva clave" @bind="nuevaClaveUno" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <input type="password" placeholder="Repite la nueva clave" @bind="nuevaClaveDos" class="form-control">
+                            </div>
+                            <div class="advertencia">
+                                @textoAdvertencia
+                            </div>
+                            <div class="d-flex justify-content-between mb-3">
+                                <button type="submit" class="btn btn-black btn-sm" @onclick="Aceptar" @onclick:preventDefault>Aceptar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+@code {
+    String claveActual = "";
+    String nuevaClaveUno = "";
+    String nuevaClaveDos = "";
+    int userId;
+    User? usuario;
+    DialogoError dialogo = null!;
+
+    private string textoAdvertencia = " ";
+
+    public async Task Read() {
+        var result = await sessionStorage.GetAsync<int>("userId");
+        userId = result.Success ? result.Value : 0;
+        usuario = userListUseCase.Execute().Find(user => user.Id == userId);
+    }
+
+    async Task Aceptar() {
+
+        if (string.IsNullOrEmpty(claveActual) || string.IsNullOrEmpty(nuevaClaveUno) || string.IsNullOrEmpty(nuevaClaveDos)) {
+            textoAdvertencia = "Complete todos los campos";
+            StateHasChanged();
+            return;
+        }
+
+        await Read();
+
+        if (usuario == null) {
+            throw new Exception("Usuario no encontrado");
+        }
+
+        if (usuario.password != claveActual) {
+            textoAdvertencia = "La clave ingresada es incorrecta";
+            StateHasChanged();
+            return;
+        }
+
+        if (nuevaClaveUno.Length < 8) {
+            textoAdvertencia = "La contraseña debe tener como mínimo 8 caracteres";
+            StateHasChanged();
+            return;
+        }
+
+        if (nuevaClaveUno != nuevaClaveDos) {
+            textoAdvertencia = "La nuevas claves ingresadas no coincide";
+            StateHasChanged();
+            return;
+        }
+
+        usuario.password = nuevaClaveUno;
+        modifyUserUseCase.Execute(usuario);
+        await sessionStorage.SetAsync("cartel?", "Cambio de contraseña exitoso");
+        navegador.NavigateTo("/", true);
+
+    }
+}

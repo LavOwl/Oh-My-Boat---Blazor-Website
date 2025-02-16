@@ -1,0 +1,144 @@
+@page "/registrarempleado"
+@inject NavigationManager navegador
+@inject employeeListUseCase employeeListUseCase
+@inject addEmployeeUseCase addEmployeeUseCase
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+@using System.Text;
+
+<DialogoError @ref="dialogo"/>
+
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-8">
+            <div class="card border-dark">
+                <div class="card-body">
+                    <h1 class="h3 mb-4 text-center">Registrar empleado</h1>
+                    <form>
+                        <div class="form-group">
+                            <input placeholder="Dirección de correo electrónico" @bind="employee.mail" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input placeholder="Nombre" @bind="employee.name" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input placeholder="Apellido" @bind="employee.surname" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input type="date" min="@((DateTime.Today.Year - 120).ToString())-01-01" @bind="employee.birthDate" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input placeholder="Numero de telefono" @bind="employee.number" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input placeholder="Nombre de usuario" @bind="employee.userName" class="form-control">
+                        </div>
+                        <div class="advertencia">
+                            @textoAdvertencia
+                        </div>
+                        <button type="submit" class="btn btn-black btn-block" @onclick="Aceptar" @onclick:preventDefault>Aceptar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<Emails @ref=emails/>
+
+@code {
+    Employee employee = new Employee();
+    Employee? newEmployee;
+    DialogoError dialogo = null!;
+    Emails emails = null!;
+
+    private string textoAdvertencia = " ";
+    
+    public async Task Save() {
+        if (newEmployee != null) {
+            await sessionStorage.SetAsync("cartel?", "El empleado fue registrado con éxito");
+        }
+    }
+
+    async void Aceptar() {
+        if (!validarDatos()) {
+            return;
+        }
+
+        employee.password = GenerateRandomString(8);
+
+        if (addemployee()) {
+            return;
+        }
+
+        newEmployee = employeeListUseCase.Execute().Where(elem => employee.userName == elem.userName).SingleOrDefault();
+
+        await Save();
+        
+        // Manda mail al empleado
+        emails.SendEmail(
+            "¡Contraseña creada!", // Subject
+            employee.mail, // Mail
+            "¡Contraseña creada con éxito!", // Titulo
+            $@"
+            <p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>¡Tu contraseña ha sido generada con exito!</p>
+            <p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Para poder iniciar sesión deberás utilizar</p>
+            <p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>Email: {employee.mail}</p>
+            <p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Contraseña: {employee.password}</p>
+            " // Cuerpo
+        );
+        
+        navegador.NavigateTo("/homeemployee");
+        
+    }
+
+    bool validarDatos() {
+        if (string.IsNullOrEmpty(employee.userName) || string.IsNullOrEmpty(employee.name) || string.IsNullOrEmpty(employee.surname) || 
+        string.IsNullOrEmpty(employee.mail) || string.IsNullOrEmpty(employee.number)) {
+            textoAdvertencia = "Complete todos los campos";
+            StateHasChanged();
+            return false;
+        }
+        if ((employee.birthDate > DateOnly.FromDateTime(DateTime.Today)) || (DateOnly.FromDateTime(DateTime.Today) < employee.birthDate.AddYears(18))) {
+            textoAdvertencia = "El empleado debe ser mayor de edad para crear la cuenta";
+            StateHasChanged();
+            return false;
+        }
+        return true;
+    }
+
+    bool addemployee() {
+        try {
+            addEmployeeUseCase.Execute(employee);
+        }
+        catch (Exception ex) {
+            if (ex.Message == "Mail already in use!") {
+                textoAdvertencia = "El mail ingresado ya corresponde con una cuenta";
+                StateHasChanged();
+                return true;
+            }
+            if (ex.Message == "This username's already taken!") {
+                textoAdvertencia = "El nombre de usuario ya se encuentra en uso.";
+                StateHasChanged();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    string GenerateRandomString(int length)
+    {
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        Random random = new Random();
+        StringBuilder sb = new StringBuilder(length);
+
+        for (int i = 0; i < length; i++)
+        {
+            int randomIndex = random.Next(chars.Length);
+            sb.Append(chars[randomIndex]);
+        }
+
+        return sb.ToString();
+    }
+}

@@ -1,0 +1,52 @@
+body {
+    background-color: #f0f2f5; /* Fondo claro para contraste */
+    font-family: 'Arial', sans-serif;
+}
+
+.container {
+    background-color: #ffffff; /* Fondo blanco para la tabla */
+    border-radius: 0.5rem; /* Bordes redondeados */
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); /* Sombra para destacar */
+}
+
+.btn-black {
+    background-color: #000; 
+    color: #f8f9fa;
+    height: 50px;
+    width: 170px;
+    font-size: 16px; 
+    margin-bottom: 10px;
+    }
+    
+    .btn-black:hover {
+    opacity: 0.8;
+    }
+
+.table {
+    margin-bottom: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+    .table thead th {
+        background-color: #000000; /* Color de encabezado */
+        color: #ffffff; /* Color de texto de encabezado */
+        border-top: none;
+    }
+
+.table-bordered th, .table-bordered td {
+    border: none; /* Elimina el borde predeterminado */
+    border-bottom: 1px solid #dee2e6; /* A�ade un borde inferior */
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.05); /* Color de fondo de filas impares */
+}
+
+.clickable-row {
+    cursor: pointer; /* Cambia el cursor para indicar que es clicable */
+}
+
+    .clickable-row:hover {
+        background-color: #e9ecef; /* Color diferente al pasar el rat�n */
+    }

@@ -1,0 +1,104 @@
+@page "/login"
+@inject NavigationManager navegador
+@inject userListUseCase userListUseCase
+@inject employeeListUseCase employeeListUseCase
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage sessionStorage
+
+<DialogoError @ref=dialogo/>
+
+<body>
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-8">
+            <div class="card border-dark">
+                <div class="card-body">
+                    <h1 class="h3 mb-4 text-center">Iniciar sesión</h1>
+                    <form>
+                        <div class="form-group">
+                            <input type="text" placeholder="Correo" @bind="mail" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <input type="password" placeholder="Contraseña" @bind="password" class="form-control">
+                        </div>
+                        <div class="advertencia">
+                            @textoAdvertencia
+                        </div>
+                        <div class="d-flex justify-content-between mb-3">
+                            <button type="button" class="btn btn-black btn-sm" @onclick="() => navegarAlRegistro()" >Registrarse</button>
+                            <button type="submit" class="btn btn-black btn-sm" @onclick="() => Aceptar()" @onclick:preventDefault>Iniciar sesión</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+
+
+@code {
+    string mail = "";
+    string password = "";
+    DialogoError dialogo = null!;
+
+    private string textoAdvertencia = " ";
+
+    async Task Save(bool isEmployee, int userId) {
+        await sessionStorage.SetAsync("userId", userId);
+        await sessionStorage.SetAsync("isEmployee", isEmployee);
+        await sessionStorage.SetAsync("cartel?", "Haz iniciado sesión con exito");
+    }
+
+    async Task Aceptar(){
+
+        if ((string.IsNullOrEmpty(mail) || string.IsNullOrEmpty(password))) {
+            textoAdvertencia = "Complete todos los campos";
+            StateHasChanged();
+            return;
+        }
+
+        Employee? employee = employeeListUseCase.Execute().Find(employee => employee.mail == mail && employee.password == password);
+
+        if (employee != null) {
+            await esEmpleado(employee);
+        } 
+        else {
+            User? user = userListUseCase.Execute().Find(user => user.mail == mail && user.password == password);
+            await esCliente(user);
+        }
+    }
+
+    async Task esEmpleado(Employee employee) {
+        await Save(true, employee.Id);
+        if (employee.Id != 1) {
+            navegador.NavigateTo("/homeemployee", true);
+        }
+        else {
+            navegador.NavigateTo("/", true);
+        }
+    }
+
+    async Task esCliente(User? user) {
+
+        if (user == null) {
+            textoAdvertencia = "Los datos ingresados no corresponden a un usuario registrado";
+            StateHasChanged();  
+            return;
+        }
+
+        if (user.banned) {
+            textoAdvertencia = "Tu cuenta se encuentra baneada";
+            StateHasChanged();
+            return;
+        }
+
+        await Save(false, user.Id);
+        navegador.NavigateTo("/", true);
+    }
+
+    private void navegarAlRegistro() {
+        navegador.NavigateTo("register", true);
+    }
+}

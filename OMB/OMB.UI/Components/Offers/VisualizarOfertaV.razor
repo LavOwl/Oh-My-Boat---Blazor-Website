@@ -1,0 +1,216 @@
+@page "/visualizarofertavehicle/{offerId:int?}"
+@inject NavigationManager Navegador
+@inject offerListUseCase offerListUseCase
+@inject vehicleListUseCase vehicleListUseCase
+@inject userListUseCase userListUseCase
+@inject listPostUseCase listPostUseCase
+@inject modifyOfferUseCase modifyOfferUseCase
+@inject modifyPostUseCase modifyPostUseCase
+@inject addUnresolvedExchangeUseCase addUnresolvedExchangeUseCase
+@inject deleteOfferUseCase deleteOfferUseCase
+@inject listTransportUseCase listTransportUseCase
+@inject userListUseCase userListUseCase
+@inject listVehicleImagesUseCase listVehicleImagesUseCase
+
+<DialogoConfirmacion @ref="dialogo" OnConfirmado="resolver"/>
+
+@if (offeredVehicle != null) {
+    <section class="text-center my-5">
+        <h3>Te han ofrecido un @offeredVehicle.type.ToLower() @offeredVehicle.model</h3>
+        
+        <!-- Bootstrap Carousel for Image Slideshow -->
+		<div class="content-container">
+        <div id="carouselExampleIndicators" class="carousel slide custom-carousel-container" data-bs-ride="carousel">
+            <div class="carousel-indicators">
+                @for (int i = 0; i < imagenes.Count; i++)
+                {
+                    <button type="button" data-bs-target="#carouselExampleIndicators" data-bs-slide-to="@i" class="@(i == 0 ? "active" : "")" aria-current="true" aria-label="Slide @(i + 1)"></button>
+                }
+            </div>
+            <div class="carousel-inner">
+                @for (int j = 0; j < imagenes.Count; j++)
+                {
+                    <div class="carousel-item @(j == 0 ? "active" : "")">
+                        <img src="@($"data:image/jpeg;base64,{Convert.ToBase64String(imagenes[j])}")" class="small-carousel-image" />
+                    </div>
+                }
+            </div>
+            <button class="carousel-control-prev" type="button" data-bs-target="#carouselExampleIndicators" data-bs-slide="prev">
+                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Previous</span>
+            </button>
+            <button class="carousel-control-next" type="button" data-bs-target="#carouselExampleIndicators" data-bs-slide="next">
+                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Next</span>
+            </button>
+        </div>
+
+        <article class="my-3">
+            <p>
+                Ofrecido por @userOffering.userName <br>
+                @offeredVehicle.type @offeredVehicle.model <br>
+                @offeredVehicle.description <br>
+                Patente @offeredVehicle.plate <br>
+                @offeredVehicle.kms kilometros <br>
+                @if (offeredVehicle.type != "Ciclomotor")
+                {
+                    <span>@offeredVehicle.doors puertas</span>
+                }
+            </p>
+        </article>
+
+        <div class="button-container">
+            <button class="btn btn-primary me-2" @onclick="confirmarAceptarOferta" data-bs-dismiss="modal">Aceptar oferta</button>
+            <button class="btn btn-danger" @onclick="confirmarRechazarOferta" data-bs-dismiss="modal">Rechazar oferta</button>
+        </div>
+		</div>
+    </section>
+}
+
+<Emails @ref=emails/>
+
+@code {
+
+	[Parameter] public int? offerId {get; set;}
+
+	Offer offer = new Offer();
+
+	Vehicle offeredVehicle = new Vehicle();
+
+	User userOffering = new User();
+
+	List<byte[]> imagenes = new List<byte[]>();
+
+	DialogoConfirmacion dialogo = null!;
+	Emails emails = null!;
+	int j = 0;
+	bool accion = false;
+	int limit;
+
+	protected override void OnAfterRender(bool firstRender) {
+
+		offer = offerListUseCase.Execute().Where(O => O.Id == offerId).SingleOrDefault() ?? throw new Exception("offer not found");
+
+		offeredVehicle = vehicleListUseCase.Execute().Where(T => T.Id == offer.transporteOfertadoId).SingleOrDefault() ?? throw new Exception("vehicle not found");
+
+		imagenes = listVehicleImagesUseCase.Execute().Where(i => i.VehicleId == offeredVehicle.Id).Select(v => v.Image).ToList();
+
+		limit = imagenes.Count() - 1;
+
+		userOffering = userListUseCase.Execute().Where(U => U.Id == offeredVehicle.UserId).SingleOrDefault() ?? throw new Exception("user not found");
+
+		StateHasChanged();
+
+	}
+
+	public void confirmarAceptarOferta () {
+		accion = true;
+		dialogo.Mostrar("¿Seguro que deseas aceptar la oferta?");
+	}
+
+	public void confirmarRechazarOferta () {
+		accion = false;
+		dialogo.Mostrar("¿Seguro que deseas rechazar la oferta?");
+	}
+
+	private void pausePost (int transportId) {
+		Post post = listPostUseCase.Execute().Where(P => P.TransportId == transportId).SingleOrDefault();
+		if(post != null){
+			post.paused = true;
+			modifyPostUseCase.Execute(post);
+		}
+	}
+
+	private void borrarOfertas (int transportId) {
+		List<int> offers = offerListUseCase.Execute().Where(O => O.transporteOfertadoId == transportId && O.state == "active").ToList().Select(O => O.Id).ToList();
+		foreach (int id in offers) {
+			deleteOfferUseCase.Execute(id);
+		}
+	}
+
+	public void aceptarOferta () {
+		
+		pausePost(offer.transporteOfertadoId);
+		pausePost(offer.transportePosteadoId);
+
+		offer.state = "accepted";
+		modifyOfferUseCase.Execute(offer);
+
+		UnresolvedExchange unresolvedExchange = new UnresolvedExchange(offer.transportePosteadoId, offer.transporteOfertadoId);
+		addUnresolvedExchangeUseCase.Execute(unresolvedExchange);
+
+		borrarOfertas(offer.transporteOfertadoId);
+		borrarOfertas(offer.transportePosteadoId);
+
+		// Mail para avisar al ofertante
+		User ofertante = getUser(offer.transporteOfertadoId);
+		string titulo = getTitle(offer.transportePosteadoId);
+
+		emails.SendEmail(
+			"¡Oferta aceptada!", // Subject
+			ofertante.mail, // Mail
+			"¡Oferta aceptada!", // Titulo
+			$@"
+			<p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>¡Tu oferta a <b>{titulo}</b> ha sido aceptada!</p>
+			<p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Ya podés entrar a la página para concretar el horario de intercambio</p>
+			" // Cuerpo
+		);
+
+		Navegador.NavigateTo("listarmisintercambios/", true);
+	}
+
+	public void rechazarOferta () {
+		offer.state = "rejected";
+		modifyOfferUseCase.Execute(offer);
+
+		// Mail para avisar al ofertante
+		User ofertante = getUser(offer.transporteOfertadoId);
+		string titulo = getTitle(offer.transportePosteadoId);
+
+		emails.SendEmail(
+			"Oferta rechazada", // Subject
+			ofertante.mail, // Mail
+			"Oferta rechazada", // Titulo
+			$@"
+			<p style='line-height: 140%;color: #f4f4f4;margin-bottom: 0;'>Tu oferta a <b>{titulo}</b> ha sido rechazada</p>
+			<p style='line-height: 140%;color: #f4f4f4;margin-top: 0;'>Podés entrar a la página para seguir buscando el transporte de tus sueños</p>
+			" // Cuerpo
+		);
+
+		Navegador.NavigateTo("shippost/" + offer.transportePosteadoId, true);
+	}
+
+	//Si metemos dos dialogos confirmacion puede haber problemas
+	public void resolver () {
+		if (accion)
+			aceptarOferta();
+		else
+			rechazarOferta();
+	}
+
+	public User getUser(int transportId) {
+        Transport transport = listTransportUseCase.Execute().Find(trans => trans.Id == transportId) ?? throw new Exception("transport not found");
+        return userListUseCase.Execute().Find(user => user.Id == transport.UserId) ?? throw new Exception("user not found");
+	}
+
+	public string getTitle(int transportId) {
+        Transport postedTransport = listTransportUseCase.Execute().Find(transport => transport.Id == transportId) ?? throw new Exception("transport not found");
+        Post post = listPostUseCase.Execute().Find(post => post.TransportId == postedTransport.Id) ?? throw new Exception("post not found");
+		return post.Title;
+	}
+
+	public void MoveRight() {
+      if (j < limit) j++;
+      else j = 0;
+
+      StateHasChanged();
+    }
+
+    public void MoveLeft() {
+      if (j > 0) j--;
+      else j = limit;
+
+      StateHasChanged();
+    }
+
+}
