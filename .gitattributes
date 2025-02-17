@@ -1,5 +1,5 @@
-*.cs linguist-detectable=true
-*.razor linguist-detectable=true
+*.cs linguist-detectable
+*.razor linguist-detectable
 *.razor linguist-language=C#
 
 
